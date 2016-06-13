@@ -470,7 +470,7 @@ func (d *driver) URLFor(ctx context.Context, path string, options map[string]int
 		}
 	}
 
-	return d.Bucket.SignedURL(d.s3Path(path), expiresTime), nil
+	return d.Bucket.SignedURLWithMethod(methodString, d.s3Path(path), expiresTime, nil, nil), nil
 }
 
 func (d *driver) s3Path(path string) string {

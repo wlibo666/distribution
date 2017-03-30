@@ -16,7 +16,7 @@ import (
 	"github.com/gorilla/handlers"
 )
 
-const maximumReturnedEntries = 100
+const maximumReturnedEntries = 1024
 
 func catalogDispatcher(ctx *Context, r *http.Request) http.Handler {
 	catalogHandler := &catalogHandler{

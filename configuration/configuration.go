@@ -19,6 +19,9 @@ type Configuration struct {
 	// Version is the version which defines the format of the rest of the configuration
 	Version Version `yaml:"version"`
 
+	// CatalogCallback : when client request GET for /v2/_catalog
+	// if registry get repos too slowly,will POST data to CatalogCallback url
+	CatalogCallback string `yaml:"catalogcallback,omitempty"`
 	// Log supports setting various parameters related to the logging
 	// subsystem.
 	Log struct {

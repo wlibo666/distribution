@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/docker/distribution/registry/api/errcode"
 	"github.com/docker/distribution/registry/storage"
@@ -34,6 +36,35 @@ type catalogAPIResponse struct {
 	Repositories []string `json:"repositories"`
 }
 
+type reposList struct {
+	Registry string   `json:"registry"`
+	Repos    []string `json:"repos"`
+}
+
+func PostRepos(mpaasAddr string, registry string, repos []string) error {
+	if mpaasAddr == "" {
+		return nil
+	}
+	rep := &reposList{}
+	rep.Registry = registry
+	rep.Repos = repos
+
+	data, err := json.Marshal(rep)
+	if err != nil {
+		return fmt.Errorf("Marshal failed,err:%s,struct:%v", err.Error(), rep)
+	}
+	resp, err := http.DefaultClient.Post(mpaasAddr, "application/json; charset=utf-8", strings.NewReader(string(data)))
+	if err != nil {
+		return fmt.Errorf("Post to:%s failed,err:%s", mpaasAddr, err.Error())
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		respData, _ := ioutil.ReadAll(resp.Body)
+		return fmt.Errorf("remote server return code:%d,data:%s", resp.StatusCode, string(respData))
+	}
+	return nil
+}
+
 func (ch *catalogHandler) GetCatalog(w http.ResponseWriter, r *http.Request) {
 	var moreEntries = true
 
@@ -43,7 +74,6 @@ func (ch *catalogHandler) GetCatalog(w http.ResponseWriter, r *http.Request) {
 	if err != nil || maxEntries < 0 {
 		maxEntries = maximumReturnedEntries
 	}
-
 	repos := make([]string, maxEntries)
 
 	filled, err := ch.App.registry.Repositories(ch.Context, repos, lastEntry)
@@ -68,6 +98,12 @@ func (ch *catalogHandler) GetCatalog(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Link", urlStr)
 	}
+	go func() {
+		err := PostRepos(ch.App.Config.CatalogCallback, ch.App.Config.HTTP.Host, repos)
+		if err != nil {
+			fmt.Printf("err:%s\n", err.Error())
+		}
+	}()
 
 	enc := json.NewEncoder(w)
 	if err := enc.Encode(catalogAPIResponse{

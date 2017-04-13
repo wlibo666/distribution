@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 
@@ -41,26 +42,31 @@ type reposList struct {
 	Repos    []string `json:"repos"`
 }
 
-func PostRepos(mpaasAddr string, registry string, repos []string) error {
+func PostRepos(mpaasAddr, secret string, registry string, repos []string) error {
 	if mpaasAddr == "" {
 		return nil
 	}
+	tmpAddr := mpaasAddr + "?&secret=" + secret
 	rep := &reposList{}
 	rep.Registry = registry
-	rep.Repos = repos
+	for _, v := range repos {
+		if v != "" {
+			rep.Repos = append(rep.Repos, v)
+		}
+	}
 
 	data, err := json.Marshal(rep)
 	if err != nil {
-		return fmt.Errorf("Marshal failed,err:%s,struct:%v", err.Error(), rep)
+		return fmt.Errorf("post to:%s,Marshal failed,err:%s,struct:%v", tmpAddr, err.Error(), rep)
 	}
-	resp, err := http.DefaultClient.Post(mpaasAddr, "application/json; charset=utf-8", strings.NewReader(string(data)))
+	resp, err := http.DefaultClient.Post(tmpAddr, "application/json; charset=utf-8", strings.NewReader(string(data)))
 	if err != nil {
-		return fmt.Errorf("Post to:%s failed,err:%s", mpaasAddr, err.Error())
+		return fmt.Errorf("Post to:%s failed,err:%s", tmpAddr, err.Error())
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		respData, _ := ioutil.ReadAll(resp.Body)
-		return fmt.Errorf("remote server return code:%d,data:%s", resp.StatusCode, string(respData))
+		return fmt.Errorf("post to:%s,remote server return code:%d,data:%s", tmpAddr, resp.StatusCode, string(respData))
 	}
 	return nil
 }
@@ -71,6 +77,7 @@ func (ch *catalogHandler) GetCatalog(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	lastEntry := q.Get("last")
 	maxEntries, err := strconv.Atoi(q.Get("n"))
+	callBack := q.Get("callback")
 	if err != nil || maxEntries < 0 {
 		maxEntries = maximumReturnedEntries
 	}
@@ -98,12 +105,18 @@ func (ch *catalogHandler) GetCatalog(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Link", urlStr)
 	}
-	go func() {
-		err := PostRepos(ch.App.Config.CatalogCallback, ch.App.Config.HTTP.Host, repos)
-		if err != nil {
-			fmt.Printf("err:%s\n", err.Error())
+	go func(callBack string) {
+		var err error
+		if callBack == "" {
+			err = PostRepos(ch.App.Config.CatalogCallback, ch.App.Config.HTTP.Secret, ch.App.Config.HTTP.Host, repos)
+		} else {
+			err = PostRepos(callBack, ch.App.Config.HTTP.Secret, ch.App.Config.HTTP.Host, repos)
 		}
-	}()
+
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "PostRepos err:%s\n", err.Error())
+		}
+	}(callBack)
 
 	enc := json.NewEncoder(w)
 	if err := enc.Encode(catalogAPIResponse{
